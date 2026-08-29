@@ -9,9 +9,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.core.base_model import Base
 from src.core.config import get_settings
 
-# 这里要导入所有模型模块，确保 metadata 收集到全部表
-# 示例：from src.modules.user.model import User
-from src.modules.medical.model import *
+# 导入所有模型模块，确保 metadata 收集到全部表
+import src.modules.medical.model  
 
 config = context.config
 

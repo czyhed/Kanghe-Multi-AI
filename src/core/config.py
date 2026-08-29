@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "text-embedding-v3"
     VL_MODEL: str = "qwen-vl"
 
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    
     LOG_LEVEL: str = "DEBUG"
     LOG_DIR: str = "logs"
 
