@@ -46,7 +46,7 @@ def _ensure_collection(alias: str, dims: int) -> Collection:
     collection.load()
     return collection
 
-
+# BaseStore —— LangGraph 定义好的存储基类/接口，规定了"一个记忆库必须有哪些能力"（get / put / search / delete / list_namespaces）。
 class MilvusStore(BaseStore):
     """
     基于 Milvus 的长期记忆 Store，支持语义相似度检索。
@@ -118,12 +118,12 @@ class MilvusStore(BaseStore):
         """异步批量执行操作（核心实现）。"""
         results: list[Result] = []
         for op in ops:
-            if isinstance(op, GetOp):
+            if isinstance(op, GetOp):# 取一条
                 results.append(await self._aget(op.namespace, op.key))
-            elif isinstance(op, PutOp):
+            elif isinstance(op, PutOp):# 存一条
                 await self._aput(op.namespace, op.key, op.value)
                 results.append(None)
-            elif isinstance(op, SearchOp):
+            elif isinstance(op, SearchOp):# 搜一条
                 items = await self._asearch(op.namespace_prefix, op.query, op.limit)
                 results.append(items)
             elif isinstance(op, ListNamespacesOp):
@@ -136,6 +136,8 @@ class MilvusStore(BaseStore):
     # 具体操作实现
     # ------------------------------------------------------------------ #
 
+
+    # ----------------------------------------存一条-----------------------------------
     async def _aput(
         self,
         namespace: tuple[str, ...],
@@ -143,7 +145,7 @@ class MilvusStore(BaseStore):
         value: dict[str, Any] | None,
     ) -> None:
         """写入或删除一条记忆。"""
-        doc_id = self._make_id(namespace, key)
+        doc_id = self._make_id(namespace, key) # 唯一id
 
         # value 为 None 表示删除
         if value is None:
@@ -155,7 +157,7 @@ class MilvusStore(BaseStore):
         text_for_embed = json.dumps(value, ensure_ascii=False)
         embedding = await self._aembed_text(text_for_embed)
 
-        # 先删除旧记录（upsert 语义）
+        # 先删除旧记录（upsert 语义）后插入
         self._collection.delete(f'id == "{doc_id}"')
 
         # 插入新记录
@@ -168,18 +170,16 @@ class MilvusStore(BaseStore):
             "created_at": time.time(),
         }])
         self._collection.flush()
-
-    async def _aget(
-        self,
-        namespace: tuple[str, ...],
-        key: str,
-    ) -> Item | None:
+# ------------------------------------------取一条-----------------------------------
+    # 按ID 取一条
+    # 直接用 ID 精确查（query），不用向量。走的是"精确匹配"而不是"语义匹配"
+    async def _aget(self,namespace: tuple[str, ...],key: str) -> Item | None:
         """精确查询一条记忆。"""
         doc_id = self._make_id(namespace, key)
         results = self._collection.query(
             expr=f'id == "{doc_id}"',
             output_fields=["id", "namespace", "key", "value_json", "created_at"],
-        )
+        )# 过滤/枚举：按条件把记录全挑出来, 只在乎匹配 不在乎像不像
         if not results:
             return None
         row = results[0]
@@ -190,7 +190,7 @@ class MilvusStore(BaseStore):
             created_at=row.get("created_at"),
             updated_at=row.get("created_at"),
         )
-
+    # -------------------------------------按意思找----------------------------------------
     async def _asearch(
         self,
         namespace_prefix: tuple[str, ...],
@@ -202,6 +202,8 @@ class MilvusStore(BaseStore):
 
         if not query:
             # 无查询词时按 namespace 前缀列举
+
+
             results = self._collection.query(
                 expr=f'namespace like "{ns_filter}%"',
                 output_fields=["id", "namespace", "key", "value_json", "created_at"],
@@ -210,7 +212,10 @@ class MilvusStore(BaseStore):
             return [self._item_from_hit(r) for r in results]
 
         # 有查询词时做向量相似度检索
-        query_vec = await self._aembed_text(query)
+        query_vec = await self._aembed_text(query)#  把当前问题也变成向量 query_vec
+
+
+        # 相似度排名：算出向量最像的 N 条 | 搜最相关 | 算向量距离这里是 COSINE
         search_results = self._collection.search(
             data=[query_vec],
             anns_field="embedding",

@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"minio 桶创建失败，文件上传功能将无法使用：{e}")
     try:
+        
         check_milvus_health()
     except Exception as e:
         logger.error(f"milvus 连接失败，向量检索功能将无法使用：{e}")

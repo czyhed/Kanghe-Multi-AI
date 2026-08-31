@@ -2,7 +2,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.redis import AsyncRedisSaver
 from langchain.agents import create_agent
 from langchain_deepseek.chat_models import ChatDeepSeek
-from pywin.framework.toolmenu import tools
+
 
 from agents.store_tools import save_memory, search_memory
 from infra.milvus_client import get_milvus_client_alias
@@ -36,7 +36,7 @@ async def create_supervisor_agent():
     # 必须在首次使用前调用一次，索引已存在时自动跳过，可以重复调用
     checkpointer = AsyncRedisSaver(redis_client=redis_client)
     await checkpointer.asetup()
-
+    # asetup() 相当于给 Redis 建好「索引目录」，只首次调用有意义，可重复调用（不会再建）
 
     # 3. 长期记忆
     # ── 长期记忆：Milvus Store ─────────────────────────────────────────
@@ -61,7 +61,7 @@ async def create_supervisor_agent():
             "当需要回忆用户历史信息时，使用 search_memory 工具检索。"
         ),
         middleware=[
-            SummarizationMiddleware( # 会话总结压缩
+            SummarizationMiddleware( # 会话自动总结压缩
                 model="deepseek-chat",
                 trigger=[
                     ("tokens", 4000),  # token数达到4k时触发
@@ -88,7 +88,7 @@ async def get_supervisor_agent():
         _supervisor_agent = await create_supervisor_agent()
     return _supervisor_agent
 
-
+# 短期记忆-入口
 # FastAPI 路由中使用
 async def chat_endpoint(user_id: str, session_id: str, message: str):
     # 使用单例，不重复初始化。获取 agent
@@ -102,3 +102,7 @@ async def chat_endpoint(user_id: str, session_id: str, message: str):
         config=config,
     )
     return result["messages"][-1].content
+
+
+# checkpointer＝「聊天草稿箱」，同一会话续接用，存谁说过什么。
+# store＝「病历档案柜」，跨会话主动读写 + 语义检索，存值得记住的长期知识。

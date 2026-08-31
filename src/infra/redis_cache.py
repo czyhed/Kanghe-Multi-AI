@@ -41,7 +41,12 @@ _checkpointer_client = redis.Redis(connection_pool=_checkpointer_pool)
 
 def get_checkpointer_redis() -> redis.Redis:
     """
-    返回供 RedisSaver（LangGraph checkpointer）专用的 Redis 客户端。
-    decode_responses=False，以 bytes 模式运行，与业务 Redis 客户端隔离。
+    返回供 RedisSaver(LangGraph checkpointer)专用的 Redis 客户端。
+    decode_responses=False,以 bytes 模式运行，与业务 Redis 客户端隔离。
     """
     return _checkpointer_client
+
+
+# _redis_client（业务用）vs _checkpointer_client（checkpointer 用）
+# checkpointer＝「聊天草稿箱」，同一会话续接用，存谁说过什么。
+# store＝「病历档案柜」，跨会话主动读写 + 语义检索，存值得记住的长期知识。

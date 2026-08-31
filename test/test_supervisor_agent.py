@@ -4,10 +4,12 @@ import pytest
 
 from agents.supervisor_agent import chat_endpoint
 
-# @pytest.mark.asyncio
+#@pytest.mark.asyncio
 async def test_supervisor_agent():
-    result = await chat_endpoint("1234","AEEEEA", "你好，我是雷丰阳")
+    result = await chat_endpoint("1234","AEEEEA", "你好，我是ccc")
     print(result)
+
+
 
 
 async def test_agent_memory():
@@ -39,15 +41,16 @@ async def test_agent_store():
     """
     # ── 第一轮：用新会话写入病史 ──────────────────────────────────────────
     session_1 = new_session()
-    resp1 = await chat_endpoint("2244", session_1, "你好，我叫张三，有新冠病史")
+    resp1 = await chat_endpoint("1144", session_1, "你好，我叫张三，有新冠病史")
     print(f"\n[写入] 回复：{resp1}")
-    resp1 = await chat_endpoint("2244", session_1, "我对樱桃过敏")
+    resp1 = await chat_endpoint("1144", session_1, "我对樱桃过敏")
     print(f"\n[写入] 回复：{resp1}")
-    resp1 = await chat_endpoint("2244", session_1, "我对樱桃过敏")
+    resp1 = await chat_endpoint("1144", session_1, "我对樱桃过敏")
 
     # ── 第二轮：换一个全新会话，查询病史（跨会话长期记忆） ───────────────
     session_2 = new_session()  # 与 session_1 不同，短期记忆里没有上文
-    resp2 = await chat_endpoint("2244", session_2, "我有什么病史和过敏史？")
+    resp2 = await chat_endpoint("1144", session_2, "我有什么病史和过敏史？")
     print(f"[检索] 回复：{resp2}")
 
-    assert "糖尿病" in resp2, f"长期记忆应能跨会话检索到糖尿病史，实际回复：{resp2}"
+    # 写入的是「新冠病史」，这里应断言写入过的病史关键词，而非笔记里旧示例的“糖尿病”
+    assert "新冠" in resp2, f"长期记忆应能跨会话检索到新冠病史，实际回复：{resp2}"

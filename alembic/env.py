@@ -11,7 +11,7 @@ from src.core.config import get_settings
 
 # 导入所有模型模块，确保 metadata 收集到全部表
 import src.modules.medical.model  
-
+from src.modules.medical.model import * 
 config = context.config
 
 if config.config_file_name is not None:
