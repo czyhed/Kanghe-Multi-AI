@@ -5,10 +5,12 @@
 from __future__ import annotations
 from src.agents.inquiry.state import CandidateDisease, PatientContext
 
+
+# 给候选病"加权 + 重新排名"
 def apply_context_weights(
-    candidates: list[CandidateDisease],
-    patient_context: PatientContext,
-    denied_symptoms: list[str],
+    candidates: list[CandidateDisease], # 候选病列表
+    patient_context: PatientContext, # 病人上下文
+    denied_symptoms: list[str], # 否定症状
 ) -> list[CandidateDisease]:
     """
     在基础置信度上叠加上下文权重，返回重新排序后的候选疾病列表。
@@ -25,12 +27,15 @@ def apply_context_weights(
         for s in c.all_symptoms:
             symptom_disease_count[s] = symptom_disease_count.get(s, 0) + 1
     for c in candidates:
-        score = c.base_confidence
+        score = c.base_confidence #base_confidence：基础分
+
         # +0.15 既往病史命中
-        for history_item in patient_context.medical_history:
+        # 患者档案，节点①从 PostgreSQL 加载
+        for history_item in patient_context.medical_history: # medical_history 既往病史
             if c.name in history_item:
                 score += 0.15
                 break
+
         # +0.10 长期记忆命中
         for memory in patient_context.long_term_memories:
             if c.name in memory:
@@ -39,22 +44,26 @@ def apply_context_weights(
         # +0.05 易感人群匹配（简化实现：暂用年龄段粗匹配，后续可接 easy_get 字段）
         # 此处预留接口，实际匹配逻辑需结合 Disease.easy_get 字段内容
         # score += 0.05  # 暂时注释，等 easy_get 字段接入后启用
+
         # -0.20 核心症状被否认
         # 核心症状 = 只属于该疾病（symptom_disease_count == 1）且被用户否认
         for s in c.all_symptoms:
             if s in denied_symptoms and symptom_disease_count.get(s, 0) == 1:
                 score -= 0.20
                 break  # 一个核心症状被否认就扣分，不叠加
+
         # 置信度限制在 [0, 1]
-        c.confidence = round(max(0.0, min(1.0, score)), 4)
+        c.confidence = round(max(0.0, min(1.0, score)), 4) # confidence - 最终分
+
     # 按最终置信度降序排列
     candidates.sort(key=lambda x: x.confidence, reverse=True)
     return candidates
 
+# 判断是否收敛
 def check_convergence(
-    candidates: list[CandidateDisease],
-    current_round: int,
-    max_rounds: int = 10,
+    candidates: list[CandidateDisease], # 候选病
+    current_round: int, # 当前轮次
+    max_rounds: int = 10, # 最大轮次
 ) -> tuple[bool, bool]:
     """
     判断问诊是否可以收敛（输出结论）。
@@ -62,19 +71,24 @@ def check_convergence(
         (should_conclude, force_conclude)
         should_conclude : True = 可以输出结论
         force_conclude  : True = 是因为达到轮次上限被迫结束（需在结论中标注"信息不足"）
+        (False, False)：不收敛，继续问。
     """
     # 达到轮次上限，强制结束
-    if current_round >= max_rounds:
-        return True, True
-    if not candidates:
-        return False, False
+    if current_round >= max_rounds: # 问满10轮，不能再拖，强制收口
+        return True, True # 第一个 True=该出结论，第二个 True=是被迫的
+
+    if not candidates: # 一个候选病都没有	, 症状太罕见查不到
+        return False, False # 由 node_query_neo4j 里 elif not candidates 分支兜底直接出结论
+
     top1 = candidates[0].confidence
     # 条件1：Top1 置信度 ≥ 70%
-    if top1 >= 0.70:
-        return True, False
+    if top1 >= 0.70: # 第一名信息≥ 70%
+        return True, False # 有了七成以上把握，正常收敛
+
     # 条件2：Top1 与 Top2 置信度差值 ≥ 30%（Top1 明显领先）
     if len(candidates) >= 2:
         top2 = candidates[1].confidence
-        if top1 - top2 >= 0.30:
-            return True, False
+        if top1 - top2 >= 0.30: # 第一比第二高出 30%
+            return True, False # 即使第一名绝对分不高，但遥遥领先第二名，赢家明确，也收敛
+
     return False, False

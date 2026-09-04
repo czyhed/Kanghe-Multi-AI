@@ -2,7 +2,7 @@
 """
 step1:状态机定义（InquiryState + InquiryPhase）
 step2:移交数据包（InquiryHandoffPayload）
-
+定义状态
 """
 
 from enum import Enum                          # Python 标准库
@@ -22,10 +22,10 @@ class InquiryPhase(str, Enum):
     COMPLICATION_CHECK = "COMPLICATION_CHECK" # 追问并发症症状
     CONCLUDE           = "CONCLUDE"           # 输出诊断结论
     HANDOFF            = "HANDOFF"            # 移交 Inquiry Worker Agent
-    END                = "__end__"                # 流程结束
+    END                = "__end__"                # 流程结束 # langgraph底层end是 __end__
 
 # ── 候选疾病 ────────────────────────────────────────────────────────────
-# 嫌疑人
+# 类比-嫌疑病
 class CandidateDisease(BaseModel):
     name: str
     confidence: float = 0.0           # 最终置信度（加权后）
@@ -49,16 +49,19 @@ class PatientContext(BaseModel):
 class InquiryHandoffPayload(BaseModel):
     patient_id: int | None = None
     patient_context: dict = Field(default_factory=dict)
-    confirmed_symptoms: list[str] = Field(default_factory=list)
-    denied_symptoms: list[str] = Field(default_factory=list)
+    confirmed_symptoms: list[str] = Field(default_factory=list) # 确认症状
+    denied_symptoms: list[str] = Field(default_factory=list) # 否认症状
     unmatched_symptoms: list[str] = Field(default_factory=list)
-    primary_disease: str = ""
+    primary_disease: str = "" # 主诊断
     primary_confidence: float = 0.0
-    suspected_diseases: list[str] = Field(default_factory=list)
-    department: str = ""
+    suspected_diseases: list[str] = Field(default_factory=list) # 疑似疾病
+    department: str = "" # 建议科室
     recommended_checks: list[str] = Field(default_factory=list)
     total_rounds: int = 0
     session_id: str = ""
+
+
+
 
 # ── 主状态对象：在 LangGraph 节点间流转的"黑板" ──────────────────────────
 #  因为：节点是"独立函数"，彼此没法共享变量，所以需要维护一块黑板

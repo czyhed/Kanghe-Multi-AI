@@ -1,7 +1,9 @@
 
 
 # step5:Neo4j Cypher 查询封装
-
+"""
+把已经确认的症状翻译成可能的疾病,并把这些病的信息补全、挑出最值得追问的症状 ---它是问诊流程里"从症状走向诊断"的桥梁，也是整个循环的核心驱动：每次追问完，都会回到这里重新缩小候选疾病范围，直到收敛出结论。
+"""
 
 # src/agents/inquiry/neo4j_queries.py
 from __future__ import annotations
@@ -9,8 +11,13 @@ from loguru import logger
 from neo4j import AsyncDriver
 from src.agents.inquiry.state import CandidateDisease
 
+# 查候选疾病 + 命中率
+"""
+目的：拿已确认的症状，去图谱里找出"可能得什么病"，按命中率排个序。
+算一个命中率：= 命中的症状数（matched_count） / 该病总症状数（total_symptoms）
+"""
 async def query_candidate_diseases(
-    confirmed_symptoms: list[str],
+    confirmed_symptoms: list[str],# 接收 state.confirmed_symptoms
     neo4j_driver: AsyncDriver,
     top_k: int = 10,
 ) -> list[CandidateDisease]:
@@ -57,6 +64,9 @@ async def query_candidate_diseases(
     logger.debug(f"Neo4j 候选疾病: {[c.name for c in candidates]}")
     return candidates
 
+# 补全嫌疑病-详情
+# 把候选疾病"补成完整档案"。
+#  补全科室/检查/并发症
 async def enrich_candidate_details(
     candidates: list[CandidateDisease],
     neo4j_driver: AsyncDriver,
@@ -92,16 +102,19 @@ async def enrich_candidate_details(
     WHERE d.name IN $names
     RETURN d.name AS disease, collect(comp.name) AS complications
     """
+
+    # 并行发4条查询 同一session连续run
     async with neo4j_driver.session() as session:
         symptoms_result = await (await session.run(symptoms_cypher, names=disease_names)).data()
         dept_result     = await (await session.run(dept_cypher,     names=disease_names)).data()
         check_result    = await (await session.run(check_cypher,    names=disease_names)).data()
         comp_result     = await (await session.run(comp_cypher,     names=disease_names)).data()
-    # 构建查找字典
+    # 各自建"病名→数据"查找字典：字典推导式
     symptoms_map    = {r["disease"]: r["symptoms"]      for r in symptoms_result}
     dept_map        = {r["disease"]: r["department"]    for r in dept_result}
     check_map       = {r["disease"]: r["checks"]        for r in check_result}
     comp_map        = {r["disease"]: r["complications"] for r in comp_result}
+    # 然后批量回填
     for c in candidates:
         c.all_symptoms  = symptoms_map.get(c.name, [])
         c.department    = dept_map.get(c.name, "")
@@ -109,6 +122,8 @@ async def enrich_candidate_details(
         c.complications = comp_map.get(c.name, [])
     return candidates
 
+# 挑出待追问的症状
+# 目的：从候选疾病的症状里，挑出"还没问过、且最能区分疾病"的症状，准备追问患者。
 async def get_pending_symptoms(
     candidates: list[CandidateDisease],
     confirmed_symptoms: list[str],
@@ -121,6 +136,7 @@ async def get_pending_symptoms(
     出现次数越少 = 区分度越高，优先追问。
     """
     already_known = set(confirmed_symptoms) | set(denied_symptoms) | set(asked_symptoms)
+    # 把 病的 all_symptoms 里还没被确认/否认/问过的症状统计出现次数
     symptom_count: dict[str, int] = {}
     for c in candidates:
         for s in c.all_symptoms:

@@ -1,9 +1,11 @@
-
 # src/agents/inquiry/symptom_normalizer.py
-
-""""""
+# 在线 - 每一次问诊
 """
-step3:症状三层标准化
+step3:症状三层标准化  怎么查
+
+extract_and_normalize_symptoms() - 第一层
+match_symptoms_in_neo4j() - 第二层
+semantic_match_symptoms() - 第三层
 """
 
 from __future__ import annotations
@@ -43,6 +45,8 @@ SYMPTOM_EXTRACT_PROMPT = """你是医疗术语标准化专家。
 用户描述：{user_input}
 请提取所有症状并标准化后填入 symptoms 字段。如果没有明确症状，symptoms 填空列表。"""
 
+
+#  ──────────────── 第一层 LLM 提取 + 标准化。 ──────────────────────────────────────────
 async def extract_and_normalize_symptoms(
     user_input: str,
     llm: BaseChatModel,
@@ -67,6 +71,7 @@ async def extract_and_normalize_symptoms(
         logger.warning(f"LLM 结构化输出失败，降级为空列表: {e}")
         return []
 
+#──────────────── 判断哪些症状在图谱里精确存在 ──────────────────────────────────────────────
 async def match_symptoms_in_neo4j(
     symptoms: list[str],
     neo4j_driver: AsyncDriver,
@@ -88,6 +93,8 @@ async def match_symptoms_in_neo4j(
 
 SIMILARITY_THRESHOLD = 0.85  # 低于此值视为真正的图谱外症状
 
+# ─────────── Neo4j未命中用，Milvus检索 ────────────────────────────────────────────
+# 向量相似度找最近的标准症状
 async def semantic_match_symptoms(
     unmatched_symptoms: list[str],
     embedding_model: Embeddings,
@@ -127,6 +134,7 @@ async def semantic_match_symptoms(
             still_unmatched.append(symptom)
     return mapped, still_unmatched
 
+# # ────────────────── 总入口 ──────────────────────────────────────────────────────────
 async def normalize_symptoms(
     user_input: str,
     llm: BaseChatModel,
@@ -147,7 +155,7 @@ async def normalize_symptoms(
         return {"matched": [], "mapped": {}, "unmatched": [], "all_standard": []}
     matched, unmatched_after_exact = await match_symptoms_in_neo4j(normalized, neo4j_driver)
     mapped, still_unmatched = await semantic_match_symptoms(
-        unmatched_after_exact, embedding_model, milvus_client
+        unmatched_after_exact, embedding_model, milvus_client #  只接收第二层未命中，没有接收已命中的词语
     )
     all_standard = matched + list(mapped.values())
     return {

@@ -1,8 +1,10 @@
 from fastapi import Depends, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from src.api.routers.chat import router as chat_router
 
-from src.infra.minio_client import ensure_bucket_exists, get_minio_client
+
+from infra.minio_client import get_minio_client, ensure_bucket_exists
 from src.infra.milvus_client import (
     check_milvus_health,
     close_milvus_client,
@@ -55,9 +57,10 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
     logger.info(f"{settings.APP_NAME} 关闭.. ")
 
-
 def create_app() -> FastAPI:
     settings = get_settings()
+    # src/main.py，在 create_app() 函数中添加：
+
 
     # 创建应用
     # 注册生命周期管理器
@@ -82,6 +85,7 @@ def create_app() -> FastAPI:
     # 注册异常处理器
     register_exception_handlers(app)
 
+    app.include_router(chat_router)
     # 注册路由
     # app.include_router(user_router, prefix="/api/v1")
 

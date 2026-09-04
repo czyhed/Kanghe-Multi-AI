@@ -1,8 +1,8 @@
 
 
 # step4:Milvus 症状向量索引初始化
-
-
+# 它专门用于将 Neo4j 中的症状节点同步到 Milvus 向量库。
+# 离线一次性查询
 """
 症状向量索引初始化脚本。
 首次部署时执行一次，之后 Neo4j 新增症状时增量执行。
@@ -13,6 +13,7 @@ import asyncio
 import sys
 import os
 from langchain_community.embeddings import DashScopeEmbeddings
+
 # 把项目根目录加入 Python 路径，确保能 import src 下的模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from pymilvus import (
@@ -21,11 +22,13 @@ from pymilvus import (
 )
 from neo4j import AsyncGraphDatabase
 from src.core.config import get_settings
+
 settings = get_settings()
 COLLECTION_NAME = "symptom_index"
 EMBEDDING_DIM = 1024  # text-embedding-v3 维度，与 MilvusStore 保持一致
 MILVUS_ALIAS = "symptom_init"
 
+# -------------确保集合存在---------------------
 def ensure_symptom_collection(alias: str) -> Collection:
     """
     确保 symptom_index collection 存在。
@@ -55,7 +58,7 @@ def ensure_symptom_collection(alias: str) -> Collection:
     col.load()
     print(f"[INFO] collection '{COLLECTION_NAME}' 创建成功。")
     return col
-
+# ---------------------- 从Neo4j拉取源数据 -------------------------
 async def fetch_all_symptoms(neo4j_driver) -> list[str]:
     """从 Neo4j 取出所有 Symptom 节点的名称。"""
     async with neo4j_driver.session() as session:
@@ -64,9 +67,10 @@ async def fetch_all_symptoms(neo4j_driver) -> list[str]:
     names = [r["name"] for r in records if r["name"]]
     print(f"[INFO] 从 Neo4j 获取到 {len(names)} 个症状节点。")
     return names
-
+# ----------------------- 向量化 ---------------------------------
 def get_embedding_model():
     """
+    创建并返回一个“文本转向量”的工具对象。
     返回 Embedding 模型实例。
     项目使用 DeepSeek 兼容的 OpenAI 接口 + text-embedding-v3。
     """
@@ -75,6 +79,7 @@ def get_embedding_model():
         dashscope_api_key=settings.DASHSCOPE_API_KEY,
     )
 
+# ------------------------ 主流程 -----------------------------------
 async def build_symptom_index():
     """主流程：全量构建症状向量索引。"""
     # 1. 连接 Milvus
