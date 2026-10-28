@@ -15,12 +15,14 @@ from src.agents.supervisor_agent import get_supervisor_agent, UserContext
 from src.agents.inquiry.graph import run_inquiry, build_inquiry_deps
 from src.agents.inquiry.state import InquiryState, InquiryPhase
 from src.agents.workers.inquiry_agent import handle_handoff
+from src.agents.safety import EMERGENCY_REPLY, detect_emergency
+from src.core.deps import get_current_user
+from src.modules.user.model import User
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
 class ChatRequest(BaseModel):
-    user_id: str
     session_id: str
     message: str
     patient_id: int | None = None
@@ -31,10 +33,14 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
-def _make_keys(user_id: str, session_id: str) -> tuple[str, str]:
-    """生成 Redis 键名。thread_id 与 Supervisor checkpointer 保持一致。"""
-    thread_id = f"{user_id}:{session_id}"
-    return f"inquiry_active:{thread_id}", f"inquiry_state:{thread_id}"
+async def _handle_emergency(message: str, thread_id: str, redis) -> str | None:
+    """急症预检：命中则清掉进行中的问诊并返回就医指引，否则返回 None。"""
+    keyword = detect_emergency(message)
+    if keyword is None:
+        return None
+    logger.warning(f"急症预检命中: thread={thread_id} keyword={keyword}")
+    await redis.delete(f"inquiry_active:{thread_id}", f"inquiry_state:{thread_id}")
+    return EMERGENCY_REPLY
 
 
 async def _run_inquiry_turn(
@@ -87,6 +93,7 @@ async def _run_inquiry_turn(
 async def chat(
     req: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     非流式对话接口。
@@ -94,9 +101,13 @@ async def chat(
     """
     try:
         redis = get_checkpointer_redis()
-        active_key, state_key = _make_keys(req.user_id, req.session_id)
-        thread_id = f"{req.user_id}:{req.session_id}"
+        thread_id = f"{user.id}:{req.session_id}"
         active_key = f"inquiry_active:{thread_id}"
+
+        # ── 急症预检：先于任何路由 ──
+        emergency_reply = await _handle_emergency(req.message, thread_id, redis)
+        if emergency_reply:
+            return ChatResponse(reply=emergency_reply, session_id=req.session_id)
 
         # ── 问诊进行中：直接走 InquiryGraph ──
         if await redis.exists(active_key):
@@ -110,7 +121,7 @@ async def chat(
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": req.message}]},
             config=config,
-            context=UserContext(user_id=req.user_id, session_id=req.session_id),
+            context=UserContext(user_id=str(user.id), session_id=req.session_id, role=user.role),
         )
         reply = result["messages"][-1].content
         return ChatResponse(reply=reply, session_id=req.session_id)
@@ -125,6 +136,7 @@ async def chat(
 async def chat_stream(
     req: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     流式对话接口（Server-Sent Events）。
@@ -139,8 +151,17 @@ async def chat_stream(
     async def event_generator():
         try:
             redis = get_checkpointer_redis()
-            thread_id = f"{req.user_id}:{req.session_id}"
+            thread_id = f"{user.id}:{req.session_id}"
             active_key = f"inquiry_active:{thread_id}"
+
+            # ── 急症预检：先于任何路由 ──
+            emergency_reply = await _handle_emergency(req.message, thread_id, redis)
+            if emergency_reply:
+                data = json.dumps({"type": "token", "content": emergency_reply}, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+                done = json.dumps({"type": "done", "session_id": req.session_id}, ensure_ascii=False)
+                yield f"data: {done}\n\n"
+                return
 
             # ── 问诊进行中：InquiryGraph 非流式执行，结果整体推送 ──
             # （InquiryGraph 内部多次调用 LLM，流式拆分复杂度高，
@@ -157,6 +178,9 @@ async def chat_stream(
                 async for chunk in agent.astream(
                     {"messages": [{"role": "user", "content": req.message}]},
                     config=config,
+                    context=UserContext(
+                        user_id=str(user.id), session_id=req.session_id, role=user.role
+                    ),
                     stream_mode="messages",
                 ):
                     if isinstance(chunk, tuple):

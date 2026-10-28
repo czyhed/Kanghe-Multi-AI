@@ -1,39 +1,55 @@
+import secrets
 from datetime import datetime, timedelta, timezone
-import jwt
 
-SECRET_KEY = "12af38e3ab85909849bfe0b89f89075d7677438a0f14c0304a46249ae513558d"
+import jwt
+from fastapi.security import OAuth2PasswordBearer
+from loguru import logger
+
+from src.core.config import get_settings
+
 ALGORITHM = "HS256"
 
-# 配置OAuth2 Bearer 模式
-from fastapi.security import OAuth2PasswordBearer
+# 从 Authorization: Bearer <token> 头中提取令牌
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+_fallback_secret: str | None = None
 
-# 编码JWT，创建一个令牌。登录成功后，把用户信息传递过来。 生成的令牌以后发给前端。
-# 前端每次请求都需要携带自己的授权令牌。
+
+def _get_secret() -> str:
+    """
+    优先使用环境变量 JWT_SECRET_KEY。
+    未配置时生成进程内随机密钥：服务可以启动，但重启后旧 token 全部失效。
+    """
+    global _fallback_secret
+    secret = get_settings().JWT_SECRET_KEY
+    if secret:
+        return secret
+    if _fallback_secret is None:
+        _fallback_secret = secrets.token_hex(32)
+        logger.warning("未配置 JWT_SECRET_KEY，使用临时随机密钥，重启后 token 将失效")
+    return _fallback_secret
+
+
+class TokenError(Exception):
+    """token 缺失、过期或不合法"""
+
+
 def encode_jwt(payload: dict) -> str:
-    payload_copy = payload.copy()
-    # 更新过期时间为30分钟后。注意使用 utc 时间
-    payload_copy["exp"] = datetime.now(timezone.utc) + timedelta(minutes=30)
-    payload_copy["iat"] = datetime.now(timezone.utc)
-
-    print(f"准备encode payload {payload_copy}")
-
-    token = jwt.encode(payload_copy, key =SECRET_KEY, algorithm=ALGORITHM)
-    print(f"生成完成的token: {token}")
-    return token
+    """登录成功后签发 token。payload 里不要放敏感数据。"""
+    now = datetime.now(timezone.utc)
+    claims = {
+        **payload,
+        "iat": now,
+        "exp": now + timedelta(minutes=get_settings().JWT_EXPIRE_MINUTES),
+    }
+    return jwt.encode(claims, key=_get_secret(), algorithm=ALGORITHM)
 
 
-# 解码JWT，验证令牌的有效性。[从令牌中获取用户信息]
-# 每次请求到达后端时，从请求头中提取令牌，然后调用此函数验证令牌的有效性。
-# 返回 当时用户的信息（payload里面不要放敏感数据）
 def verify_jwt(token: str) -> dict:
+    """校验 token 并返回 payload。失败时抛出 TokenError。"""
     try:
-        payload = jwt.decode(token, key=SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, key=_get_secret(), algorithms=[ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise Exception("token已经过期")
+        raise TokenError("token 已过期")
     except jwt.InvalidTokenError:
-        raise Exception("非法token")
-    except Exception as e:
-        raise Exception(f"token校验失败: {str(e)}")
+        raise TokenError("非法 token")
