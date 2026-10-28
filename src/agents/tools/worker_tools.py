@@ -1,5 +1,6 @@
 # src/agents/worker_tools.py
 
+from loguru import logger
 from langchain_core.tools import tool
 from src.agents.workers.report_agent import get_report_agent
 from src.agents.workers.drug_agent import get_drug_agent
@@ -19,6 +20,8 @@ from src.agents.inquiry.state import InquiryPhase
 from src.agents.workers.inquiry_agent import handle_handoff
 from src.infra.redis_cache import get_checkpointer_redis
 from src.core.config import get_settings
+from src.core.deps import has_role
+from src.modules.user.model import Role
 
 settings = get_settings()
 
@@ -26,6 +29,7 @@ settings = get_settings()
 class UserContext:  # 用户上下文
     user_id: str
     session_id: str
+    role: str = "patient"  # 来自已校验的 JWT，用于工具层的二次权限校验
 
 # 仅第一轮会发起调用
 @tool
@@ -41,7 +45,7 @@ async def call_inquiry_agent(message: str, runtime: ToolRuntime[UserContext]) ->
     # 获取当前会话 ID 和用户 ID
     session_id = runtime.context.session_id
     user_id = runtime.context.user_id
-    print("🔧工具调用 call_inquiry_agent :", session_id, message)
+    logger.info(f"工具调用 call_inquiry_agent: session={session_id}")
 
     deps = build_inquiry_deps()
 
@@ -124,12 +128,15 @@ async def call_knowledge_agent(message: str) -> str:
 
 
 @tool
-async def call_operation_agent(message: str) -> str:
+async def call_operation_agent(message: str, runtime: ToolRuntime[UserContext]) -> str:
     """
     调用运营数据Agent，查询医院运营统计数据。
     适用场景：运营人员询问就诊量、收入、科室排名等运营数据时。
     message: 运营人员的数据查询需求（自然语言）。
     """
+    # 工具层再校验一次角色：即使 LLM 被提示词注入诱导调用，非运营角色也拿不到数据
+    if not has_role(runtime.context.role, (Role.OPERATOR.value,)):
+        return "权限不足：运营数据仅限运营人员和管理员查询。"
     agent = get_operation_agent()
     result = await agent.ainvoke(
         {"messages": [{"role": "user", "content": message}]}

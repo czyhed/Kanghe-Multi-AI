@@ -4,10 +4,10 @@ from langchain.agents import create_agent
 from langchain_deepseek.chat_models import ChatDeepSeek
 from dataclasses import dataclass
 
-from agents.store_tools import save_memory, search_memory
-from agents.tools.worker_tools import UserContext, WORKER_TOOLS
-from infra.milvus_client import get_milvus_client_alias
-from infra.milvus_store import MilvusStore
+from src.agents.store_tools import save_memory, search_memory
+from src.agents.tools.worker_tools import UserContext, WORKER_TOOLS
+from src.infra.milvus_client import get_milvus_client_alias
+from src.infra.milvus_store import MilvusStore
 from src.infra.redis_cache import get_checkpointer_redis
 from dotenv import load_dotenv
 load_dotenv()
@@ -28,7 +28,7 @@ def _get_embedding_model():
     # from langchain_openai import OpenAIEmbeddings
     # return OpenAIEmbeddings(model="text-embedding-3-small")
 
-SUPERVISOR_SYSTEM_PROMPT = """你是天宫医疗的智能总助手。
+SUPERVISOR_SYSTEM_PROMPT = """你是康和医疗的智能总助手。
 
 ## 你的职责
 
@@ -63,7 +63,9 @@ SUPERVISOR_SYSTEM_PROMPT = """你是天宫医疗的智能总助手。
 
 ## 工作原则
 
-1. 你绝不直接回答健康相关问题。只要用户提到身体不适、症状、不舒服（如"不舒服"、"不太好"、"有点难受"），无论多模糊，都必须调用 call_inquiry_agent。意图不明确时也默认调 call_inquiry_agent。
+1. 你绝不直接回答健康、医疗、症状、用药相关的问题，这类问题必须通过专项助手完成。只要用户提到身体不适、症状、不舒服（如"不舒服"、"不太好"、"有点难受"），无论多模糊，都必须调用 call_inquiry_agent。
+1a. 闲聊：问候、致谢、告别、询问你能做什么等不涉及健康内容的话，直接用一两句话自然回复，不调用任何专项助手，也不要把对话硬拉向问诊。你可以简要介绍自己能帮忙的事：问诊分诊、药物咨询、医学知识、报告解读。
+1b. 意图不明：用户想要帮助，但看不出是咨询症状、药物、医学知识还是别的（如"我想咨询一下"、"帮我看看"），先用一句话询问"请问是想咨询身体症状、药物用法，还是了解某类医学知识？"。此时不要追问病史，也不要调用专项助手。用户一旦明确，按对应意图处理。
 2. 传递消息规则：调用专项助手时，message 参数必须原样传递用户的原始输入，禁止改写、补充指令或添油加醋。如果 search_memory 检索到了相关历史信息，以"[长期记忆] xxx"的格式附加在用户原文之后，不要修改用户原文本身。
 3. 复杂问题可串联：例如用户描述症状后又问用药，先调用 call_inquiry_agent 再调用 call_drug_agent
 4. 患者安全优先：识别到"胸痛"、"呼吸困难"、"意识不清"等急症关键词时，立即提示用户拨打 120 或前往急诊，不要等待问诊流程

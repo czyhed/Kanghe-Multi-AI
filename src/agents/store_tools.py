@@ -1,3 +1,4 @@
+from loguru import logger
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolRuntime
 
@@ -23,7 +24,7 @@ async def save_memory(
         content: 要记住的内容，用一句话描述
     """
 
-    print(f"🔧执行：保存长期记忆：{content} ")
+    logger.info("保存长期记忆")
     user_id = get_user_id(runtime)
     if not user_id:
         return "无法获取用户ID。"
@@ -52,7 +53,7 @@ async def search_memory(
     """
 
     user_id = get_user_id(runtime)
-    print(f"🔧执行：搜索长期记忆：{query}; 用户id：{user_id}")
+    logger.info(f"搜索长期记忆: user_id={user_id}")
     if not user_id:
         return "无法获取用户ID。"
 
