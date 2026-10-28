@@ -138,3 +138,15 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# --- 项目专用 ---
+node_modules/
+outputs/
+artifacts/
+.gradio/
+.pytest_cache/
+data/eval/
+codebuddy/
+*.dmp
+# 个人学习笔记
+src/agents/inquiry/study.md
