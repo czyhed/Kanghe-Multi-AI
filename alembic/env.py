@@ -9,8 +9,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.core.base_model import Base
 from src.core.config import get_settings
 
+from src.modules.medical.model import *
+from src.agents.knowledge.model import *
+
 # 导入所有模型模块，确保 metadata 收集到全部表
 import src.modules.medical.model  
+import src.modules.user.model
 from src.modules.medical.model import * 
 config = context.config
 
