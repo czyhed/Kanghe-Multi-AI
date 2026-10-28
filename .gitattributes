@@ -1,0 +1,16 @@
+* text=auto
+
+# Python/Unix 文件统一 LF，Windows 下编辑不再触发 CRLF 转换警告
+*.py  text eol=lf
+*.md  text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ini text eol=lf
+*.sh  text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# PowerShell 脚本保持 CRLF
+*.ps1 text eol=crlf
