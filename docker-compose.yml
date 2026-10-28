@@ -1,5 +1,5 @@
 # ============================================================
-# 天宫医疗智能体 (tiangong-agent) — 基础设施层
+# 康和医疗智能体 (tiangong-agent) — 基础设施层
 # 包含：PostgreSQL / Redis / Milvus / Neo4j
 # 启动：docker compose up -d
 # 停止：docker compose down
@@ -104,7 +104,7 @@ services:
       retries: 3
 
   # ----------------------------------------------------------
-  # Milvus — 向量数据库 
+  # Milvus — 向量数据库
   # 存储：文档 Embedding（RAG 语义检索）、患者历史长期记忆
   # ----------------------------------------------------------
   milvus:
@@ -113,25 +113,38 @@ services:
     command: ["milvus", "run", "standalone"]
     security_opt:
     - seccomp:unconfined
+    restart: always
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MQ_TYPE: woodpecker
+      # 简化配置，减少资源占用
+      COMMON_ENABLEMSG: "false"
+      QUERYNODE_CACHE_SIZE: "536870912"  # 512MB
+      DATANODE_FLUSH_INSERTBUF_SIZE: "8388608"  # 8MB
     volumes:
       - ./docker/milvus_data:/var/lib/milvus
     ports:
-      - "19530:19530"   # gRPC 接口（SDK 连接）
-      - "9091:9091"     # HTTP 接口（健康检查）
+      - "19530:19530"
+      - "9091:9091"
     depends_on:
-      - etcd
-      - minio
+      etcd:
+        condition: service_started
+      minio:
+        condition: service_healthy
     networks:
       - tiangong-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
       timeout: 20s
-      retries: 3
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
   # Milvus  可视化客户端
   attu:
     container_name: tiangong-attu
