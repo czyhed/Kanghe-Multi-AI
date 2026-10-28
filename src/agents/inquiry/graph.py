@@ -15,7 +15,7 @@ from langgraph.graph import StateGraph, END # ★ LangGraph（图/状态机的�
 from pymilvus import MilvusClient
 from sqlalchemy.ext.asyncio import result
 
-from agents.inquiry.state import InquiryState
+from src.agents.inquiry.state import InquiryState
 from src.infra.milvus_client import get_milvus_client_alias
 from src.infra.neo4j_client import get_neo4j_driver
 from src.core.config import get_settings

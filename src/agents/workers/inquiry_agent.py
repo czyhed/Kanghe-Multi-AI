@@ -8,7 +8,7 @@ from src.agents.inquiry.state import InquiryHandoffPayload
 
 settings = get_settings()
 
-INQUIRY_WORKER_PROMPT = """你是天宫医疗的挂号助手。
+INQUIRY_WORKER_PROMPT = """你是康和医疗的挂号助手。
 
 你已经收到了智能问诊的结论，现在需要帮助患者完成挂号预约。
 
