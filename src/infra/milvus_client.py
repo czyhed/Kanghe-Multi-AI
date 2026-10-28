@@ -6,7 +6,6 @@ from src.core.config import get_settings
 settings = get_settings()
 MILVUS_ALIAS = "tiangong_milvus"
 
-
 def get_milvus_client_alias() -> str:
     """
     返回 Milvus 连接别名。

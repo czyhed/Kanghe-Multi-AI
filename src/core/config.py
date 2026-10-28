@@ -5,7 +5,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     APP_NAME: str = "tiangong-agent"
     APP_ENV: str = "dev"
-    APP_DEBUG: bool = True
+    APP_DEBUG: bool = False
 
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     
     LOG_LEVEL: str = "DEBUG"
     LOG_DIR: str = "logs"
+
+    # 鉴权：生产环境必须通过环境变量设置 JWT_SECRET_KEY
+    JWT_SECRET_KEY: str = ""
+    JWT_EXPIRE_MINUTES: int = 30
+
+    TRULENS_DB_NAME: str = "trulens_eval"
+    MINERU_API_URL: str = ""
+    MINERU_BACKEND: str = "hybrid-auto-engine"  # GPU 加速模式
+    MINERU_TIMEOUT: int = 300
 
     @property
     def DATABASE_URL(self) -> str:

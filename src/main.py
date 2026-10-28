@@ -2,9 +2,11 @@ from fastapi import Depends, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from src.api.routers.chat import router as chat_router
+from src.api.routers.knowledge import router as knowledge_router
+from src.api.routers.auth import router as auth_router
 
 
-from infra.minio_client import get_minio_client, ensure_bucket_exists
+from src.infra.minio_client import get_minio_client, ensure_bucket_exists
 from src.infra.milvus_client import (
     check_milvus_health,
     close_milvus_client,
@@ -85,7 +87,9 @@ def create_app() -> FastAPI:
     # 注册异常处理器
     register_exception_handlers(app)
 
+    app.include_router(auth_router)
     app.include_router(chat_router)
+    app.include_router(knowledge_router)
     # 注册路由
     # app.include_router(user_router, prefix="/api/v1")
 

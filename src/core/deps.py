@@ -1,41 +1,62 @@
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from fastapi.params import Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.infra.database import get_db
-from src.core.exceptions import BizException
-from src.utils.jwt_utils import verify_jwt, oauth2_scheme
-from src.modules.user.model import User
+from src.modules.user.model import Role, User
+from src.utils.jwt_utils import TokenError, oauth2_scheme, verify_jwt
 
 
-# oauth2_scheme  是  fastapi 自带的功能，从 Authorization 头中提取 bearer 开头的 token
-# 以后前端发送请求；
-# GET xxx
-# Authorization: Bearer <你的令牌>
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
-# 根据 token 的用户id ，查询用户的详细信息（未来包含角色、权限等）
+
+# 前端每次请求携带：Authorization: Bearer <token>
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """从 JWT token 中解析当前登录用户，用于保护接口"""
+    """从 JWT 解析当前登录用户。角色以数据库为准，避免 token 签发后角色变更仍然有效。"""
     try:
-        print(f"前端传递的token: {token}")
-        payload = verify_jwt(token)
-        user_id = int(payload.get("sub"))
-    except Exception as e:
-        print(f"token 校验失败: {token} 异常信息: {e}")
-        raise BizException(code=401, message="未登录或 token 已过期")
+        user_id = int(verify_jwt(token)["sub"])
+    except (TokenError, KeyError, ValueError) as e:
+        raise _unauthorized(str(e) if isinstance(e, TokenError) else "非法 token")
 
     user = await db.get(User, user_id)
-    if not user:
-        raise BizException(code=401, message="用户不存在")
+    if user is None:
+        raise _unauthorized("用户不存在")
     if not user.is_active:
-        raise BizException(code=401, message="账号已被禁用")
-
+        raise _unauthorized("账号已被禁用")
     return user
 
+
+def has_role(user_role: str, allowed: tuple[str, ...]) -> bool:
+    """admin 拥有全部权限，其余角色必须在允许列表内。"""
+    return user_role == Role.ADMIN or user_role in allowed
+
+
+def require_roles(*roles: Role):
+    """
+    路由级角色校验依赖：
+        @router.post("/upload", dependencies=[Depends(require_roles(Role.DOCTOR))])
+    或需要用户对象时：
+        user: User = Depends(require_roles(Role.OPERATOR))
+    """
+    allowed = tuple(r.value for r in roles)
+
+    async def checker(user: User = Depends(get_current_user)) -> User:
+        if not has_role(user.role, allowed):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "当前角色无权访问该资源")
+        return user
+
+    return checker
+
+
 # api/v1/users?page=1&page_size=10&keyword=张三
-# select * from users where name like '%张三%' limit 20,10
 class PageParams:
     """通用分页参数，通过 Depends 注入到接口中"""
     def __init__(
@@ -48,7 +69,6 @@ class PageParams:
         self.page_size = page_size
         self.keyword = keyword
 
-    # 动态计算 offset 值，用于 SQL 查询中的 LIMIT 子句
     @property
     def offset(self) -> int:
         """计算 SQL OFFSET"""
