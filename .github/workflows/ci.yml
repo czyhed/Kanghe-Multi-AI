@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # 只安装单元测试用到的依赖；这些测试不连接数据库、Redis 或 LLM
+      - name: Install dependencies
+        run: |
+          pip install fastapi httpx pydantic-settings "sqlalchemy[asyncio]" asyncpg \
+            pyjwt bcrypt loguru python-multipart python-dotenv \
+            langgraph langchain-core pytest pytest-asyncio
+
+      - name: Run unit tests
+        run: pytest test/test_confidence.py test/test_sql_security.py test/test_auth.py test/test_safety.py -q
